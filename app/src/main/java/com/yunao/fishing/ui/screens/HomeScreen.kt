@@ -1,4 +1,5 @@
 package com.yunao.fishing.ui.screens
+import androidx.compose.foundation.layout.width
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
