@@ -12,29 +12,51 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.yunao.fishing.data.CatchLogEntry
+import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.UserSpot
+import kotlin.math.roundToInt
 
 private data class Stat(val label: String, val value: String)
 
-private val stats = listOf(
-    Stat("累计出钓", "23 次"),
-    Stat("累计渔获", "61.4 kg"),
-    Stat("常去钓点", "4 个"),
-    Stat("专属模型置信度", "中（还需更多记录）"),
-)
-
-private val insights = listOf(
-    "你在东北风、微阴天气下的中鱼率比平均高 31%",
-    "谷物颗粒+腥味小药 是你近期命中率最高的饵料组合",
-    "上午 6-9 点是你目前出钓效率最高的时段",
-)
-
 @Composable
-fun ProfileScreen() {
+fun ProfileScreen(onSignOut: () -> Unit) {
+    var logs by remember { mutableStateOf<List<CatchLogEntry>>(emptyList()) }
+    var spots by remember { mutableStateOf<List<UserSpot>>(emptyList()) }
+    var nickname by remember { mutableStateOf("渔友") }
+    var email by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        logs = try { FirebaseRepository.getLogs() } catch (e: Exception) { emptyList() }
+        spots = try { FirebaseRepository.getSpots() } catch (e: Exception) { emptyList() }
+        nickname = try { FirebaseRepository.getMyNickname() } catch (e: Exception) { "渔友" }
+        email = FirebaseRepository.currentUser?.email ?: ""
+    }
+
+    val totalWeight = logs.sumOf { it.weightKg }
+    val hitTrips = logs.count { it.countFish > 0 }
+    val hitRate = if (logs.isNotEmpty()) (hitTrips * 100f / logs.size).roundToInt() else 0
+
+    val stats = listOf(
+        Stat("累计出钓", "${logs.size} 次"),
+        Stat("累计渔获", "%.1f kg".format(totalWeight)),
+        Stat("常去钓点", "${spots.size} 个"),
+        Stat("专属中鱼率", if (logs.isEmpty()) "暂无数据" else "$hitRate%"),
+    )
+
+    val insights = buildInsights(logs)
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
@@ -44,7 +66,7 @@ fun ProfileScreen() {
         item { Spacer(Modifier.height(8.dp)) }
         item {
             Text("我的钓鱼档案", style = MaterialTheme.typography.titleLarge)
-            Text("你的出钓数据资产，越记录越懂你", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            Text("$nickname · $email", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
         }
         item {
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(1.dp)) {
@@ -66,15 +88,51 @@ fun ProfileScreen() {
         item {
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(1.dp)) {
                 Column(Modifier.padding(14.dp)) {
-                    insights.forEach { text ->
-                        Row(Modifier.padding(vertical = 4.dp)) {
-                            Text("• ", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
-                            Text(text, style = MaterialTheme.typography.bodyMedium)
+                    if (insights.isEmpty()) {
+                        Text("多记录几次出钓，这里会显示只属于你的数据洞察", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    } else {
+                        insights.forEach { text ->
+                            Row(Modifier.padding(vertical = 4.dp)) {
+                                Text("• ", color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                                Text(text, style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
                 }
             }
         }
+        item {
+            OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
+                Text("退出登录")
+            }
+        }
         item { Spacer(Modifier.height(16.dp)) }
     }
+}
+
+private fun buildInsights(logs: List<CatchLogEntry>): List<String> {
+    if (logs.size < 3) return emptyList()
+    val insights = mutableListOf<String>()
+
+    val byWindDir = logs.groupBy { it.weatherWindDir }.filterKeys { it.isNotBlank() && it != "无明显" }
+    byWindDir.entries.filter { it.value.size >= 2 }
+        .maxByOrNull { it.value.count { l -> l.countFish > 0 } * 100f / it.value.size }
+        ?.let { (dir, dirLogs) ->
+            val rate = (dirLogs.count { it.countFish > 0 } * 100f / dirLogs.size).roundToInt()
+            val overall = (logs.count { it.countFish > 0 } * 100f / logs.size).roundToInt()
+            if (rate > overall) insights.add("你在${dir}风时的中鱼率比平均高 ${rate - overall} 个百分点")
+        }
+
+    val bestSpot = logs.groupBy { it.spotName }.maxByOrNull { it.value.size }
+    if (bestSpot != null && bestSpot.value.size >= 2) {
+        insights.add("「${bestSpot.key}」是你去得最多的钓点，共记录 ${bestSpot.value.size} 次")
+    }
+
+    val bestHour = logs.groupBy { it.weatherSky }.filterKeys { it.isNotBlank() }
+        .maxByOrNull { it.value.size }
+    if (bestHour != null) {
+        insights.add("你出钓时最常遇到「${bestHour.key}」天气，共 ${bestHour.value.size} 次")
+    }
+
+    return insights.take(3)
 }
