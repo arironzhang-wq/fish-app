@@ -9,38 +9,66 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.yunao.fishing.data.CatchLog
-import com.yunao.fishing.data.MockData
+import com.yunao.fishing.data.CatchLogEntry
+import com.yunao.fishing.data.FirebaseRepository
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun LogScreen() {
-    var showTip by remember { mutableStateOf(false) }
+    var logs by remember { mutableStateOf<List<CatchLogEntry>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
+    val scope = rememberCoroutineScope()
 
+    LaunchedEffect(reloadKey) {
+        loading = true
+        logs = try { FirebaseRepository.getLogs() } catch (e: Exception) { emptyList() }
+        loading = false
+    }
     Scaffold(
         floatingActionButton = {
-            FloatingActionButton(onClick = { showTip = true }) {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "记录一次出钓")
             }
         }
@@ -59,38 +87,45 @@ fun LogScreen() {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
             Spacer(Modifier.height(12.dp))
-
-            if (showTip) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f))
+            when {
+                loading -> CircularProgressIndicator(modifier = Modifier.padding(top = 24.dp))
+                logs.isEmpty() -> Text(
+                    "还没有记录，点右下角 + 记一次出钓吧",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(top = 24.dp)
+                )
+                else -> LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(bottom = 80.dp)
                 ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text("Demo 提示", fontWeight = FontWeight.Bold)
-                        Text(
-                            "这是原型演示，新增出钓记录的完整表单（天气自动快照 / 装备选择 / 拍照渔获 / 鱼种识别）在正式版中实现。",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Button(onClick = { showTip = false }) { Text("知道了") }
+                    items(logs, key = { it.id }) { log ->
+                        LogCard(log, onDelete = {
+                            scope.launch {
+                                FirebaseRepository.deleteLog(log.id)
+                                reloadKey++
+                            }
+                        })
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(bottom = 80.dp)
-            ) {
-                items(MockData.recentLogs) { log -> LogCard(log) }
             }
         }
     }
+    if (showAddDialog) {
+        AddLogDialog(
+            onDismiss = { showAddDialog = false },
+            onSave = { entry ->
+                scope.launch {
+                    FirebaseRepository.addLog(entry)
+                    showAddDialog = false
+                    reloadKey++
+                }
+            }
+        )
+    }
 }
-
 @Composable
-private fun LogCard(log: CatchLog) {
+private fun LogCard(log: CatchLogEntry, onDelete: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -103,16 +138,125 @@ private fun LogCard(log: CatchLog) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(log.spotName, style = MaterialTheme.typography.titleMedium)
-                Text(log.date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(log.dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    IconButton(onClick = onDelete) {
+                        Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+                    }
+                }
             }
-            Spacer(Modifier.height(6.dp))
             Text("${log.species} · ${log.countAndSize}", fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(4.dp))
-            Text("天气快照：${log.weatherSnapshot}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-            Text("装备：${log.gearUsed}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            if (log.weatherSnapshot.isNotBlank()) {
+                Text("天气快照：${log.weatherSnapshot}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
+            if (log.gearUsed.isNotBlank()) {
+                Text("装备：${log.gearUsed}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            }
             if (log.note.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Text(log.note, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddLogDialog(onDismiss: () -> Unit, onSave: (CatchLogEntry) -> Unit) {
+    var spotName by remember { mutableStateOf("") }
+    var species by remember { mutableStateOf("") }
+    var countFish by remember { mutableStateOf("") }
+    var weightKg by remember { mutableStateOf("") }
+    var sky by remember { mutableStateOf("") }
+    var windDir by remember { mutableStateOf("") }
+    var windForce by remember { mutableStateOf("") }
+    var pressureTrend by remember { mutableStateOf("") }
+    var gearUsed by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("记一次出钓") },
+        text = {
+            Column(
+                Modifier
+                    .verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(spotName, { spotName = it }, label = { Text("钓点") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(species, { species = it }, label = { Text("鱼种") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    OutlinedTextField(
+                        countFish, { countFish = it.filter { c -> c.isDigit() } },
+                        label = { Text("尾数") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        weightKg, { weightKg = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("总重(kg)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                ChipGroup("天气", listOf("晴", "多云", "阴", "雨"), sky) { sky = it }
+                Spacer(Modifier.height(8.dp))
+                ChipGroup("风向", listOf("东北", "东南", "西北", "西南", "无明显"), windDir) { windDir = it }
+                Spacer(Modifier.height(8.dp))
+                ChipGroup("风力", listOf("无风", "1-2级", "3-4级", "5级以上"), windForce) { windForce = it }
+                Spacer(Modifier.height(8.dp))
+                ChipGroup("气压趋势", listOf("上升", "平稳", "下降"), pressureTrend) { pressureTrend = it }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(gearUsed, { gearUsed = it }, label = { Text("使用装备") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(note, { note = it }, label = { Text("备注") }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (spotName.isNotBlank()) {
+                    onSave(
+                        CatchLogEntry(
+                            spotName = spotName.trim(),
+                            species = species.trim(),
+                            countFish = countFish.toIntOrNull() ?: 0,
+                            weightKg = weightKg.toDoubleOrNull() ?: 0.0,
+                            weatherSky = sky,
+                            weatherWindDir = windDir,
+                            weatherWindForce = windForce,
+                            weatherPressureTrend = pressureTrend,
+                            gearUsed = gearUsed.trim(),
+                            note = note.trim(),
+                            dateStr = SimpleDateFormat("MM-dd", Locale.CHINA).format(Date()),
+                            timestamp = System.currentTimeMillis()
+                        )
+                    )
+                }
+            }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+@Composable
+private fun ChipGroup(label: String, options: List<String>, selected: String, onSelect: (String) -> Unit) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Spacer(Modifier.height(4.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.horizontalScroll(rememberScrollState())
+        ) {
+            options.forEach { opt ->
+                FilterChip(
+                    selected = selected == opt,
+                    onClick = { onSelect(if (selected == opt) "" else opt) },
+                    label = { Text(opt, style = MaterialTheme.typography.labelSmall) }
+                )
             }
         }
     }
