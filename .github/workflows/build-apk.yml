@@ -4,53 +4,42 @@ on:
   push:
     branches: [ "main" ]
   workflow_dispatch: {}
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
-
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
-
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: yunao-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
       - name: Decode release keystore
-        if: ${{ secrets.YUNAO_KEYSTORE_BASE64 != '' }}
         env:
           YUNAO_KEYSTORE_BASE64: ${{ secrets.YUNAO_KEYSTORE_BASE64 }}
         run: |
           echo "$YUNAO_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/yunao-release.keystore"
-
       - name: Build signed release APK
-        if: ${{ secrets.YUNAO_KEYSTORE_BASE64 != '' }}
         env:
           YUNAO_KEYSTORE_PATH: ${{ runner.temp }}/yunao-release.keystore
           YUNAO_KEYSTORE_PASSWORD: ${{ secrets.YUNAO_KEYSTORE_PASSWORD }}
           YUNAO_KEY_ALIAS: ${{ secrets.YUNAO_KEY_ALIAS }}
           YUNAO_KEY_PASSWORD: ${{ secrets.YUNAO_KEY_PASSWORD }}
         run: gradle assembleRelease --stacktrace
-
       - name: Upload signed release APK artifact
-        if: ${{ secrets.YUNAO_KEYSTORE_BASE64 != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: yunao-release-apk
