@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,24 +26,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yunao.fishing.data.CatchLogEntry
-import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.LocalRepository
 import com.yunao.fishing.data.UserSpot
 import kotlin.math.roundToInt
 
 private data class Stat(val label: String, val value: String)
 
 @Composable
-fun ProfileScreen(onSignOut: () -> Unit) {
+fun ProfileScreen() {
     var logs by remember { mutableStateOf<List<CatchLogEntry>>(emptyList()) }
     var spots by remember { mutableStateOf<List<UserSpot>>(emptyList()) }
     var nickname by remember { mutableStateOf("渔友") }
-    var email by remember { mutableStateOf("") }
+    var showEditNickname by remember { mutableStateOf(false) }
+    var reloadKey by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        logs = try { FirebaseRepository.getLogs() } catch (e: Exception) { emptyList() }
-        spots = try { FirebaseRepository.getSpots() } catch (e: Exception) { emptyList() }
-        nickname = try { FirebaseRepository.getMyNickname() } catch (e: Exception) { "渔友" }
-        email = FirebaseRepository.currentUser?.email ?: ""
+    LaunchedEffect(reloadKey) {
+        logs = try { LocalRepository.getLogs() } catch (e: Exception) { emptyList() }
+        spots = try { LocalRepository.getSpots() } catch (e: Exception) { emptyList() }
+        nickname = LocalRepository.getMyNickname()
     }
 
     val totalWeight = logs.sumOf { it.weightKg }
@@ -66,7 +68,11 @@ fun ProfileScreen(onSignOut: () -> Unit) {
         item { Spacer(Modifier.height(8.dp)) }
         item {
             Text("我的钓鱼档案", style = MaterialTheme.typography.titleLarge)
-            Text("$nickname · $email", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(nickname, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                TextButton(onClick = { showEditNickname = true }) { Text("编辑昵称") }
+            }
+            Text("数据保存在本机，不联网", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
         }
         item {
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(1.dp)) {
@@ -101,12 +107,33 @@ fun ProfileScreen(onSignOut: () -> Unit) {
                 }
             }
         }
-        item {
-            OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) {
-                Text("退出登录")
-            }
-        }
         item { Spacer(Modifier.height(16.dp)) }
+    }
+
+    if (showEditNickname) {
+        var draft by remember(nickname) { mutableStateOf(nickname) }
+        AlertDialog(
+            onDismissRequest = { showEditNickname = false },
+            title = { Text("编辑昵称") },
+            text = {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    LocalRepository.setMyNickname(draft.trim())
+                    showEditNickname = false
+                    reloadKey++
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEditNickname = false }) { Text("取消") }
+            }
+        )
     }
 }
 
