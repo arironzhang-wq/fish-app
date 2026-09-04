@@ -34,7 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yunao.fishing.data.CatchLogEntry
-import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.LocalRepository
 import com.yunao.fishing.data.ForecastEngine
 import com.yunao.fishing.data.ForecastFactor
 import com.yunao.fishing.data.SpotForecast
@@ -45,11 +45,12 @@ fun HomeScreen() {
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        logs = try { FirebaseRepository.getLogs() } catch (e: Exception) { emptyList() }
+        logs = try { LocalRepository.getLogs() } catch (e: Exception) { emptyList() }
         loading = false
     }
 
     val forecasts = remember(logs) { ForecastEngine.buildForecasts(logs) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxWidth()
@@ -82,6 +83,7 @@ fun HomeScreen() {
         item { Spacer(Modifier.height(16.dp)) }
     }
 }
+
 @Composable
 private fun ForecastCard(forecast: SpotForecast) {
     Card(
