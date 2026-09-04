@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,7 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.LocalRepository
 import com.yunao.fishing.data.UserSpot
 import kotlinx.coroutines.launch
 
@@ -52,9 +51,10 @@ fun SpotsScreen() {
 
     LaunchedEffect(reloadKey) {
         loading = true
-        spots = try { FirebaseRepository.getSpots() } catch (e: Exception) { emptyList() }
+        spots = try { LocalRepository.getSpots() } catch (e: Exception) { emptyList() }
         loading = false
     }
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
@@ -92,7 +92,7 @@ fun SpotsScreen() {
                     items(spots, key = { it.id }) { s ->
                         SpotCard(s, onDelete = {
                             scope.launch {
-                                FirebaseRepository.deleteSpot(s.id)
+                                LocalRepository.deleteSpot(s.id)
                                 reloadKey++
                             }
                         })
@@ -101,12 +101,13 @@ fun SpotsScreen() {
             }
         }
     }
+
     if (showAddDialog) {
         AddSpotDialog(
             onDismiss = { showAddDialog = false },
             onSave = { spot ->
                 scope.launch {
-                    FirebaseRepository.addSpot(spot)
+                    LocalRepository.addSpot(spot)
                     showAddDialog = false
                     reloadKey++
                 }
@@ -145,6 +146,7 @@ private fun AddSpotDialog(onDismiss: () -> Unit, onSave: (UserSpot) -> Unit) {
     var name by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("添加钓点") },
