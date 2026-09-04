@@ -8,12 +8,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.yunao.fishing.data.LocalRepository
 import com.yunao.fishing.ui.YuNaoApp
 import com.yunao.fishing.ui.theme.YuNaoTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LocalRepository.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             YuNaoRoot()
