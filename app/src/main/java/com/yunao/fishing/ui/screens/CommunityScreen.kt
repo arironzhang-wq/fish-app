@@ -35,7 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yunao.fishing.data.Achievement
 import com.yunao.fishing.data.CatchLogEntry
-import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.LocalRepository
 import com.yunao.fishing.data.Trip
 import kotlinx.coroutines.launch
 
@@ -47,15 +47,16 @@ fun CommunityScreen() {
     var showAddDialog by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-    val myUid = FirebaseRepository.currentUser?.uid
+    val myUid = LocalRepository.currentUser.uid
 
     LaunchedEffect(reloadKey) {
-        trips = try { FirebaseRepository.getTrips() } catch (e: Exception) { emptyList() }
-        logs = try { FirebaseRepository.getLogs() } catch (e: Exception) { emptyList() }
-        nickname = try { FirebaseRepository.getMyNickname() } catch (e: Exception) { "渔友" }
+        trips = try { LocalRepository.getTrips() } catch (e: Exception) { emptyList() }
+        logs = try { LocalRepository.getLogs() } catch (e: Exception) { emptyList() }
+        nickname = try { LocalRepository.getMyNickname() } catch (e: Exception) { "渔友" }
     }
 
     val achievements = buildAchievements(logs)
+
     Scaffold2(onAdd = { showAddDialog = true }) {
         LazyColumn(
             modifier = Modifier
@@ -78,9 +79,9 @@ fun CommunityScreen() {
                 }
             } else {
                 items(trips, key = { it.id }) { trip ->
-                    TripCard(trip, joined = myUid != null && myUid in trip.joinedUids, onJoin = {
+                    TripCard(trip, joined = myUid in trip.joinedUids, onJoin = {
                         scope.launch {
-                            FirebaseRepository.joinTrip(trip.id)
+                            LocalRepository.joinTrip(trip.id)
                             reloadKey++
                         }
                     })
@@ -99,8 +100,8 @@ fun CommunityScreen() {
             onDismiss = { showAddDialog = false },
             onSave = { trip ->
                 scope.launch {
-                    val uid = FirebaseRepository.currentUser?.uid ?: ""
-                    FirebaseRepository.addTrip(
+                    val uid = LocalRepository.currentUser.uid
+                    LocalRepository.addTrip(
                         trip.copy(organizerUid = uid, organizerName = nickname, joinedUids = listOf(uid))
                     )
                     showAddDialog = false
