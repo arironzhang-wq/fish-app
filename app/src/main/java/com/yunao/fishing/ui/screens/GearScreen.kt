@@ -37,7 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.LocalRepository
 import com.yunao.fishing.data.Gear
 import com.yunao.fishing.data.GearPlan
 import com.yunao.fishing.data.MockData
@@ -52,7 +52,7 @@ fun GearScreen() {
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(reloadKey) {
-        myGear = try { FirebaseRepository.getGearItems() } catch (e: Exception) { emptyList() }
+        myGear = try { LocalRepository.getGearItems() } catch (e: Exception) { emptyList() }
     }
 
     LazyColumn(
@@ -94,7 +94,7 @@ fun GearScreen() {
             items(myGear, key = { it.id }) { item ->
                 MyGearRow(item, onDelete = {
                     scope.launch {
-                        FirebaseRepository.deleteGearItem(item.id)
+                        LocalRepository.deleteGearItem(item.id)
                         reloadKey++
                     }
                 })
@@ -108,7 +108,7 @@ fun GearScreen() {
             onDismiss = { showAddDialog = false },
             onSave = { item ->
                 scope.launch {
-                    FirebaseRepository.addGearItem(item)
+                    LocalRepository.addGearItem(item)
                     showAddDialog = false
                     reloadKey++
                 }
@@ -196,6 +196,7 @@ private fun AddGearDialog(onDismiss: () -> Unit, onSave: (UserGearItem) -> Unit)
     var category by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("添加装备") },
