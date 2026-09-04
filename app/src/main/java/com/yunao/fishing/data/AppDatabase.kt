@@ -60,7 +60,7 @@ interface TripDao {
 
 @Database(
     entities = [CatchLogEntry::class, UserSpot::class, UserGearItem::class, Trip::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -79,8 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "yunao.db"
-                ).build().also { INSTANCE = it }
+                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
             }
     }
 }
-
