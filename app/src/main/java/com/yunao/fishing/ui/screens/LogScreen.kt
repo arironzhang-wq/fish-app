@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.horizontalScroll
@@ -47,7 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.yunao.fishing.data.CatchLogEntry
-import com.yunao.fishing.data.FirebaseRepository
+import com.yunao.fishing.data.LocalRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -63,9 +62,10 @@ fun LogScreen() {
 
     LaunchedEffect(reloadKey) {
         loading = true
-        logs = try { FirebaseRepository.getLogs() } catch (e: Exception) { emptyList() }
+        logs = try { LocalRepository.getLogs() } catch (e: Exception) { emptyList() }
         loading = false
     }
+
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
@@ -87,6 +87,7 @@ fun LogScreen() {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
             Spacer(Modifier.height(12.dp))
+
             when {
                 loading -> CircularProgressIndicator(modifier = Modifier.padding(top = 24.dp))
                 logs.isEmpty() -> Text(
@@ -102,7 +103,7 @@ fun LogScreen() {
                     items(logs, key = { it.id }) { log ->
                         LogCard(log, onDelete = {
                             scope.launch {
-                                FirebaseRepository.deleteLog(log.id)
+                                LocalRepository.deleteLog(log.id)
                                 reloadKey++
                             }
                         })
@@ -111,12 +112,13 @@ fun LogScreen() {
             }
         }
     }
+
     if (showAddDialog) {
         AddLogDialog(
             onDismiss = { showAddDialog = false },
             onSave = { entry ->
                 scope.launch {
-                    FirebaseRepository.addLog(entry)
+                    LocalRepository.addLog(entry)
                     showAddDialog = false
                     reloadKey++
                 }
@@ -124,6 +126,7 @@ fun LogScreen() {
         )
     }
 }
+
 @Composable
 private fun LogCard(log: CatchLogEntry, onDelete: () -> Unit) {
     Card(
@@ -173,6 +176,7 @@ private fun AddLogDialog(onDismiss: () -> Unit, onSave: (CatchLogEntry) -> Unit)
     var pressureTrend by remember { mutableStateOf("") }
     var gearUsed by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("记一次出钓") },
