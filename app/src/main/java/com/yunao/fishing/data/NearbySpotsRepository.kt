@@ -26,10 +26,16 @@ object NearbySpotsRepository {
 
     private val endpoints = listOf(
         "https://overpass-api.de/api/interpreter",
-        "https://overpass.kumi.systems/api/interpreter"
+        "https://overpass.kumi.systems/api/interpreter",
+        "https://overpass.openstreetmap.ru/api/interpreter"
     )
 
-    suspend fun search(lat: Double, lon: Double, radiusMeters: Int = 8000): List<NearbySpot> =
+    /**
+     * 返回 Result 而不是裸 List：Result.success(emptyList()) 表示查询成功但 OSM 确实没收录数据
+     * （国内部分地区常见），Result.failure(...) 表示两个镜像节点都请求失败（网络不通/超时/被拦截）。
+     * 调用方要把这两种情况分开展示，不然用户完全看不出"搜不到"到底是哪种原因。
+     */
+    suspend fun search(lat: Double, lon: Double, radiusMeters: Int = 8000): Result<List<NearbySpot>> =
         withContext(Dispatchers.IO) {
             val query = """
                 [out:json][timeout:20];
@@ -43,21 +49,23 @@ object NearbySpotsRepository {
                 out center 40;
             """.trimIndent()
 
+            var lastError: Throwable = IllegalStateException("没有可用的查询节点")
             for (endpoint in endpoints) {
-                val result = runCatching { fetch(endpoint, query, lat, lon) }.getOrNull()
-                if (result != null) return@withContext result
+                val outcome = runCatching { fetch(endpoint, query, lat, lon) }
+                outcome.onSuccess { return@withContext Result.success(it) }
+                outcome.onFailure { lastError = it }
             }
-            emptyList()
+            Result.failure(lastError)
         }
 
-    private fun fetch(endpoint: String, query: String, lat: Double, lon: Double): List<NearbySpot>? {
+    private fun fetch(endpoint: String, query: String, lat: Double, lon: Double): List<NearbySpot> {
         val encoded = "data=" + URLEncoder.encode(query, "UTF-8")
         val body = encoded.toRequestBody("application/x-www-form-urlencoded".toMediaTypeOrNull())
         val request = Request.Builder().url(endpoint).post(body).build()
 
         client.newCall(request).execute().use { resp ->
-            if (!resp.isSuccessful) return null
-            val text = resp.body?.string() ?: return null
+            if (!resp.isSuccessful) throw java.io.IOException("HTTP ${resp.code}（$endpoint）")
+            val text = resp.body?.string() ?: throw java.io.IOException("空响应（$endpoint）")
             val json = JSONObject(text)
             val elements = json.optJSONArray("elements") ?: return emptyList()
             val results = mutableListOf<NearbySpot>()

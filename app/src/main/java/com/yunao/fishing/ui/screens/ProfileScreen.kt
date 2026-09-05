@@ -72,7 +72,7 @@ fun ProfileScreen() {
                 Text(nickname, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 TextButton(onClick = { showEditNickname = true }) { Text("编辑昵称") }
             }
-            Text("数据保存在本机，不联网", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
+            Text("出钓记录保存在本机；天气/附近钓点搜索需要联网", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f))
         }
         item {
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), elevation = CardDefaults.cardElevation(1.dp)) {

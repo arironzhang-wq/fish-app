@@ -81,6 +81,7 @@ fun SpotsScreen() {
     var searchingNearby by remember { mutableStateOf(false) }
     var nearbySearched by remember { mutableStateOf(false) }
     var nearbySpots by remember { mutableStateOf<List<NearbySpot>>(emptyList()) }
+    var nearbyError by remember { mutableStateOf<String?>(null) }
 
     fun searchNearby() {
         if (!hasLocationPermission) {
@@ -92,14 +93,23 @@ fun SpotsScreen() {
         scope.launch {
             searchingNearby = true
             nearbySearched = false
+            nearbyError = null
             val loc = LocationHelper.getCurrentLocation(context)
-            if (loc != null) {
-                myLat = loc.latitude
-                myLon = loc.longitude
-                nearbySpots = NearbySpotsRepository.search(loc.latitude, loc.longitude)
-            } else {
+            if (loc == null) {
+                nearbyError = "无法获取定位，请检查是否开启了 GPS/位置服务"
                 nearbySpots = emptyList()
+                nearbySearched = true
+                searchingNearby = false
+                return@launch
             }
+            myLat = loc.latitude
+            myLon = loc.longitude
+            NearbySpotsRepository.search(loc.latitude, loc.longitude)
+                .onSuccess { nearbySpots = it }
+                .onFailure {
+                    nearbySpots = emptyList()
+                    nearbyError = "查询请求失败（${it.message ?: "网络异常"}），可能是网络不通或被拦截，不是没有数据"
+                }
             nearbySearched = true
             searchingNearby = false
         }
@@ -156,8 +166,17 @@ fun SpotsScreen() {
                             Spacer(Modifier.width(8.dp))
                             Text("正在定位并搜索附近钓场（数据来自 OpenStreetMap）…", style = MaterialTheme.typography.bodySmall)
                         }
+                        nearbyError != null -> Column {
+                            Text(
+                                nearbyError!!,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            TextButton(onClick = { searchNearby() }) { Text("重试") }
+                        }
                         nearbySearched && nearbySpots.isEmpty() -> Text(
-                            "附近暂未收录钓场数据，OSM 在部分地区覆盖较少，搜不到属于正常情况",
+                            "附近 8 公里内未搜到 OSM 收录的钓场/渔具店数据，国内部分地区 OSM 覆盖较少，属正常情况",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                         )

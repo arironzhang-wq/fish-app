@@ -1,5 +1,9 @@
 package com.yunao.fishing.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,11 +47,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.yunao.fishing.data.CatchLogEntry
 import com.yunao.fishing.data.LocalRepository
+import com.yunao.fishing.data.LocationHelper
+import com.yunao.fishing.data.WeatherRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,6 +68,20 @@ fun LogScreen() {
     var showAddDialog by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        hasLocationPermission = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+    }
 
     LaunchedEffect(reloadKey) {
         loading = true
@@ -115,6 +138,12 @@ fun LogScreen() {
 
     if (showAddDialog) {
         AddLogDialog(
+            hasLocationPermission = hasLocationPermission,
+            onRequestPermission = {
+                permissionLauncher.launch(
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                )
+            },
             onDismiss = { showAddDialog = false },
             onSave = { entry ->
                 scope.launch {
@@ -165,7 +194,12 @@ private fun LogCard(log: CatchLogEntry, onDelete: () -> Unit) {
 }
 
 @Composable
-private fun AddLogDialog(onDismiss: () -> Unit, onSave: (CatchLogEntry) -> Unit) {
+private fun AddLogDialog(
+    hasLocationPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: (CatchLogEntry) -> Unit
+) {
     var spotName by remember { mutableStateOf("") }
     var species by remember { mutableStateOf("") }
     var countFish by remember { mutableStateOf("") }
@@ -176,6 +210,48 @@ private fun AddLogDialog(onDismiss: () -> Unit, onSave: (CatchLogEntry) -> Unit)
     var pressureTrend by remember { mutableStateOf("") }
     var gearUsed by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var autoWeatherLoading by remember { mutableStateOf(false) }
+    var autoWeatherSummary by remember { mutableStateOf<String?>(null) }
+    var autoWeatherError by remember { mutableStateOf<String?>(null) }
+    var hasAutoFetched by remember { mutableStateOf(false) }
+
+    fun autoFetchWeather() {
+        autoWeatherLoading = true
+        autoWeatherError = null
+        scope.launch {
+            val loc = LocationHelper.getCurrentLocation(context)
+            if (loc == null) {
+                autoWeatherError = "定位失败，请检查 GPS/位置服务，或在下方手动选择"
+                autoWeatherLoading = false
+                return@launch
+            }
+            WeatherRepository.fetchAutoWeather(loc.latitude, loc.longitude)
+                .onSuccess { auto ->
+                    sky = auto.sky
+                    windDir = auto.windDir
+                    windForce = auto.windForce
+                    pressureTrend = auto.pressureTrend
+                    autoWeatherSummary = auto.summary
+                }
+                .onFailure {
+                    autoWeatherError = "天气获取失败（${it.message ?: "网络异常"}），请在下方手动选择"
+                }
+            autoWeatherLoading = false
+        }
+    }
+
+    // 弹窗一打开就自动申请定位权限并抓取天气，不需要用户额外点按钮
+    LaunchedEffect(hasLocationPermission) {
+        if (!hasLocationPermission) {
+            onRequestPermission()
+        } else if (!hasAutoFetched) {
+            hasAutoFetched = true
+            autoFetchWeather()
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -205,6 +281,45 @@ private fun AddLogDialog(onDismiss: () -> Unit, onSave: (CatchLogEntry) -> Unit)
                     )
                 }
                 Spacer(Modifier.height(12.dp))
+
+                Text("所在位置天气", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                Spacer(Modifier.height(4.dp))
+                when {
+                    !hasLocationPermission -> Column {
+                        Text(
+                            "需要定位权限才能自动显示天气",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                        )
+                        TextButton(onClick = onRequestPermission) { Text("授权定位") }
+                    }
+                    autoWeatherLoading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("正在自动获取…", style = MaterialTheme.typography.bodySmall)
+                    }
+                    autoWeatherError != null -> Column {
+                        Text(autoWeatherError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                        TextButton(onClick = {
+                            if (!hasLocationPermission) onRequestPermission() else autoFetchWeather()
+                        }) { Text("重试") }
+                    }
+                    autoWeatherSummary != null -> Text(
+                        autoWeatherSummary!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (autoWeatherSummary != null) {
+                    Text(
+                        "已自动获取，如有出入可在下面手动调整",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+
                 ChipGroup("天气", listOf("晴", "多云", "阴", "雨"), sky) { sky = it }
                 Spacer(Modifier.height(8.dp))
                 ChipGroup("风向", listOf("东北", "东南", "西北", "西南", "无明显"), windDir) { windDir = it }
